@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 export default function Dashboard() {
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // 1. Add Search State
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadAgents = async () => {
     const data = await api.getAgents();
@@ -26,6 +28,12 @@ export default function Dashboard() {
     };
     init();
   }, []);
+
+  // 2. Filter Agents based on Search Query (Client-Side)
+  const filteredAgents = agents.filter((agent) =>
+    agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (agent.description && agent.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className="min-h-screen bg-background font-sans selection:bg-blue-500/30">
@@ -44,9 +52,12 @@ export default function Dashboard() {
           <div className="flex items-center gap-4">
             <div className="relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              {/* 3. Bind Input to State */}
               <input
                 type="text"
                 placeholder="Search agents..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 pr-4 py-2 rounded-full bg-slate-100 dark:bg-white/5 border-none text-sm focus:ring-2 focus:ring-blue-500/50 transition-all w-64"
               />
             </div>
@@ -72,7 +83,7 @@ export default function Dashboard() {
           </div>
 
           <div className="flex gap-3">
-            {/* LOGIC: Only show Chat link if agents exist */}
+            {/* LOGIC: Only show Chat link if agents exist (checked against original list) */}
             {agents.length > 0 ? (
               <Link href="/chat">
                 <Button className="bg-slate-600 hover:bg-slate-700 text-white">
@@ -102,7 +113,8 @@ export default function Dashboard() {
             ))
           ) : (
             <>
-              {agents.map((agent) => (
+              {/* 4. Map over filteredAgents instead of agents */}
+              {filteredAgents.map((agent) => (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -120,7 +132,15 @@ export default function Dashboard() {
                 </motion.div>
               ))}
 
-              {/* Add New Agent Card (Empty State) */}
+              {/* Show "No Results" if search yields nothing but agents exist */}
+              {agents.length > 0 && filteredAgents.length === 0 && (
+                <div className="col-span-full text-center py-12 text-slate-500">
+                  No agents found matching "{searchQuery}"
+                </div>
+              )}
+
+              {/* Add New Agent Card (Always visible at end, or conditionally based on preference) */}
+              {/* I'll keep it visible so users can create even while searching */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
