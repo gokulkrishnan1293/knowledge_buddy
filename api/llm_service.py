@@ -110,6 +110,33 @@ Text:
 Return ONLY the summary. No extra formatting."""
         return self.generate_response(prompt).strip()
 
+    def enrich_knowledge(self, text: str):
+        """
+        Enriches raw knowledge text with better explanations and context.
+        """
+        prompt = f"""You are a knowledge curator. Take the following raw text and enrich it with:
+- Clear explanations of concepts
+- Helpful context and background
+- Examples where appropriate
+- Well-structured formatting
+
+Raw text:
+{text}
+
+Return ONLY the enriched version. Make it clear, comprehensive, and well-explained."""
+        return self.generate_response(prompt).strip()
+
+    def generate_conversation_title(self, first_message: str):
+        """
+        Generates a short, descriptive title for a conversation based on the first message.
+        """
+        prompt = f"""Generate a short, descriptive title (3-5 words max) for a conversation that starts with this message:
+
+"{first_message}"
+
+Return ONLY the title, nothing else. Make it concise and informative."""
+        return self.generate_response(prompt).strip()
+
     def crystallize_knowledge(self, original_text: str, qa_pairs: list):
         """
         Combines original text and Q&A into a structured policy block (Scribe).

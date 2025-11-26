@@ -8,15 +8,19 @@ class VectorStore:
         self.client = chromadb.PersistentClient(path="./chroma_db")
         self.collection = self.client.get_or_create_collection(name="knowledge_base")
 
-    def add_document(self, agent_id: str, topic_id: str, text: str, embedding: list):
+    def add_document(self, agent_id: str, topic_id: str, text: str, embedding: list, raw_text: str = None):
         """
-        Adds a document to the vector store.
+        Adds a document to the vector store with both raw and enriched versions.
         """
         doc_id = str(uuid.uuid4())
         self.collection.add(
-            documents=[text],
+            documents=[text],  # Store enriched version as main document
             embeddings=[embedding],
-            metadatas=[{"agent_id": agent_id, "topic_id": topic_id}],
+            metadatas=[{
+                "agent_id": agent_id, 
+                "topic_id": topic_id,
+                "raw_text": raw_text or text  # Store raw version in metadata
+            }],
             ids=[doc_id]
         )
         return doc_id

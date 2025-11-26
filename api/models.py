@@ -28,3 +28,21 @@ class Topic(Base):
     name = Column(String)
     doc_count = Column(Integer, default=0)
     status = Column(String, default="active")
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(String, primary_key=True, index=True)
+    title = Column(String, default="New Conversation")
+    created_at = Column(String)  # ISO format timestamp
+    updated_at = Column(String)  # ISO format timestamp
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(String, primary_key=True, index=True)
+    conversation_id = Column(String, ForeignKey("conversations.id"), nullable=True)
+    agent_id = Column(String, ForeignKey("agents.id"))
+    role = Column(String)  # "user" or "agent"
+    content = Column(Text)
+    timestamp = Column(String)  # ISO format timestamp

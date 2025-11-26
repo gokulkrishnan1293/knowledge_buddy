@@ -174,5 +174,82 @@ export const api = {
       console.error("Error fetching topic summary:", error);
       return "I don't know anything about this topic yet.";
     }
+  },
+
+  // 13. GET CHAT HISTORY
+  getChatHistory: async (agentId: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/agents/${agentId}/chat/history`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching chat history:", error);
+      return [];
+    }
+  },
+
+  // 14. CONVERSATIONS
+  createConversation: async () => {
+    try {
+      const response = await axios.post(`${API_URL}/conversations`);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      return null;
+    }
+  },
+
+  getConversations: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/conversations`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching conversations:", error);
+      return [];
+    }
+  },
+
+  getConversationMessages: async (conversationId: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/conversations/${conversationId}/messages`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching conversation messages:", error);
+      return [];
+    }
+  },
+
+  updateConversation: async (conversationId: string, title: string) => {
+    try {
+      const response = await axios.patch(`${API_URL}/conversations/${conversationId}?title=${encodeURIComponent(title)}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error updating conversation:", error);
+      return null;
+    }
+  },
+
+  deleteConversation: async (conversationId: string) => {
+    try {
+      const response = await axios.delete(`${API_URL}/conversations/${conversationId}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error deleting conversation:", error);
+      return null;
+    }
+  },
+
+  // Update chat to include conversation_id
+  chatWithConversation: async (agentId: string, message: string, conversationId?: string) => {
+    try {
+      const response = await axios.post(`${API_URL}/chat`, {
+        agent_id: agentId,
+        message: message,
+        conversation_id: conversationId
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error chatting:", error);
+      return { response: "Error connecting to agent.", source: "error" };
+    }
   }
 };

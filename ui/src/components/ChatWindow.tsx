@@ -24,6 +24,9 @@ interface ChatWindowProps {
   mode?: 'chat' | 'training';
   topicId?: string;
   topicName?: string;
+  conversationId?: string;
+  agents?: any[];
+  onAgentChange?: (agent: any) => void;
 }
 
 export function ChatWindow({
@@ -32,7 +35,10 @@ export function ChatWindow({
   agentColor = "bg-blue-500",
   mode = 'chat',
   topicId,
-  topicName
+  topicName,
+  conversationId,
+  agents,
+  onAgentChange
 }: ChatWindowProps) {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -51,12 +57,37 @@ export function ChatWindow({
   useEffect(() => {
     const loadInitialMessage = async () => {
       if (mode === 'chat') {
-        setMessages([{
-          id: "welcome",
-          role: "agent",
-          content: `Hello! I'm ${agentName}. How can I help you today?`,
-          timestamp: new Date(),
-        }]);
+        // For conversation-based chat, load messages from conversation
+        if (conversationId) {
+          const history = await api.getConversationMessages(conversationId);
+
+          if (history && history.length > 0) {
+            // Convert history to messages
+            const historyMessages = history.map((msg: any) => ({
+              id: msg.id,
+              role: msg.role,
+              content: msg.content,
+              timestamp: new Date(msg.timestamp)
+            }));
+            setMessages(historyMessages);
+          } else {
+            // No history, show welcome message
+            setMessages([{
+              id: "welcome",
+              role: "agent",
+              content: `Hello! I'm ${agentName}. How can I help you today?`,
+              timestamp: new Date(),
+            }]);
+          }
+        } else {
+          // No conversation selected, show welcome
+          setMessages([{
+            id: "welcome",
+            role: "agent",
+            content: `Hello! I'm ${agentName}. How can I help you today?`,
+            timestamp: new Date(),
+          }]);
+        }
       } else {
         // Training mode - fetch summary
         if (topicId) {
@@ -80,7 +111,7 @@ export function ChatWindow({
       }
     };
     loadInitialMessage();
-  }, [mode, agentName, topicName, topicId, agentId]);
+  }, [mode, topicName, topicId, agentId, conversationId]); // Only reload when conversation changes, not agent
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -104,7 +135,11 @@ export function ChatWindow({
 
     try {
       if (mode === 'chat') {
-        const response = await api.chat(agentId, userMsg.content);
+        // Use conversation-based chat API
+        const response = conversationId
+          ? await api.chatWithConversation(agentId, userMsg.content, conversationId)
+          : await api.chat(agentId, userMsg.content);
+
         const agentMsg: Message = {
           id: (Date.now() + 1).toString(),
           role: "agent",

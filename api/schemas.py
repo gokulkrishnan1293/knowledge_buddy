@@ -20,6 +20,7 @@ class Agent(AgentBase):
 class ChatRequest(BaseModel):
     agent_id: str
     message: str
+    conversation_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     response: str

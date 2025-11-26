@@ -72,7 +72,7 @@ export function AgentCard({ id, name, description, status, color = "bg-blue-500"
                                 )}
                             </div>
 
-                            <div className="flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
+                            <div className="flex items-center text-sm font-medium text-slate-600 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
                                 Open Studio <ArrowRight size={16} className="ml-1" />
                             </div>
                         </div>

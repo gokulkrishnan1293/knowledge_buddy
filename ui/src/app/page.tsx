@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
-import { Plus, Bot, Search, Sparkles } from 'lucide-react';
+import { Plus, Bot, Search, Sparkles, MessageSquare } from 'lucide-react';
 import { AgentCard } from '@/components/AgentCard';
 import { CreateAgentDialog } from '@/components/CreateAgentDialog';
 import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
 
 export default function Dashboard() {
   const [agents, setAgents] = useState<any[]>([]);
@@ -84,7 +86,15 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <CreateAgentDialog onAgentCreated={loadAgents} />
+          <div className="flex gap-3">
+            <Link href="/chat">
+              <Button className="bg-slate-600 hover:bg-slate-700 text-white">
+                <MessageSquare size={18} className="mr-2" />
+                Chat
+              </Button>
+            </Link>
+            <CreateAgentDialog onAgentCreated={loadAgents} />
+          </div>
         </motion.div>
 
         {/* Grid of Agents */}
