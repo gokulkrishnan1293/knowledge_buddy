@@ -57,41 +57,58 @@ class GoogleLLMService:
 
     def analyze_text(self, text: str):
         """
-        Analyzes text for gaps and generates clarifying questions (Critic + Interviewer).
+        Analyzes text for gaps and generates conversational questions.
         """
-        prompt = f"""You are a smart junior employee who just read some training material. Your job is to understand what you read, then ask your manager (the user) smart clarifying questions about things that are unclear or missing.
-
-First, read and understand this training material:
-"{text}"
-
-Now, think like a junior employee:
-- What specific details are missing that you'd need to actually do this job?
-- What edge cases or exceptions aren't covered?
-- What would happen in real scenarios that aren't mentioned?
-
-Ask 3 natural, conversational questions that show you understood the material but need clarification on specific gaps. Make them sound like a real person asking, not a robot.
-
-Also, estimate your current "Confidence Score" (0-100) on how well you understand the full picture based ONLY on this text.
-- 100 = I know everything needed to execute perfectly.
-- 0 = I have no idea what's going on.
-
-Return ONLY a JSON object with:
-- "questions": a list of 3 strings.
-- "confidence_score": an integer (0-100).
-
-Example: {{"questions": ["Question 1?", "Question 2?", "Question 3?"], "confidence_score": 45}}
-"""
+        prompt = f"""You are a smart, curious employee learning from your manager (the user).
+        
+        Material: "{text}"
+        
+        Your goal: Understand this fully so you can do your job.
+        
+        1. Identify what's missing or unclear.
+        2. Ask 1-2 natural, short follow-up questions. Do NOT ask a list of 3 questions. Just ask what matters most right now.
+        3. If you understand it well enough to start, just say so and ask for confirmation.
+        
+        Estimate your "Confidence Score" (0-100).
+        
+        Return JSON:
+        {{
+            "questions": ["Your conversational question here"],
+            "confidence_score": 50
+        }}
+        """
         response = self.generate_response(prompt)
         try:
-            # Clean up potential markdown code blocks
             cleaned = response.replace("```json", "").replace("```", "").strip()
             return json.loads(cleaned)
         except:
-            print(f"Error parsing analysis response: {response}")
             return {
-                "questions": ["Could you provide more details?", "Are there any exceptions?", "What is the specific scope?"],
+                "questions": ["Could you explain that in more detail?"],
                 "confidence_score": 10
             }
+
+    def suggest_topic_name(self, text: str):
+        """
+        Suggests a short topic name based on the text.
+        """
+        prompt = f"""Suggest a short, clear Topic Name (2-4 words) for this text or question:
+        "{text}"
+        
+        Return ONLY the topic name. No quotes, no extra text.
+        """
+        return self.generate_response(prompt).strip()
+
+    def summarize_text(self, text: str):
+        """
+        Generates a concise summary of the provided text.
+        """
+        prompt = f"""Summarize the following knowledge in 2-3 concise sentences. Focus on the key facts and rules.
+
+Text:
+{text}
+
+Return ONLY the summary. No extra formatting."""
+        return self.generate_response(prompt).strip()
 
     def crystallize_knowledge(self, original_text: str, qa_pairs: list):
         """

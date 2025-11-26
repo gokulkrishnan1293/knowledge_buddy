@@ -46,24 +46,41 @@ export function ChatWindow({
   const [currentQuestions, setCurrentQuestions] = useState<string[]>([]);
   const [qaPairs, setQaPairs] = useState<{ q: string, a: string }[]>([]);
   const [trainingStep, setTrainingStep] = useState<'initial' | 'answering'>('initial');
+  const [loadingSummary, setLoadingSummary] = useState(false);
 
   useEffect(() => {
-    if (mode === 'chat') {
-      setMessages([{
-        id: "welcome",
-        role: "agent",
-        content: `Hello! I'm ${agentName}. How can I help you today?`,
-        timestamp: new Date(),
-      }]);
-    } else {
-      setMessages([{
-        id: "welcome-training",
-        role: "agent",
-        content: `I'm ready to learn about **${topicName}**. Please explain the core concepts, rules, or policies to me.`,
-        timestamp: new Date(),
-      }]);
-    }
-  }, [mode, agentName, topicName]);
+    const loadInitialMessage = async () => {
+      if (mode === 'chat') {
+        setMessages([{
+          id: "welcome",
+          role: "agent",
+          content: `Hello! I'm ${agentName}. How can I help you today?`,
+          timestamp: new Date(),
+        }]);
+      } else {
+        // Training mode - fetch summary
+        if (topicId) {
+          setLoadingSummary(true);
+          const summary = await api.getTopicSummary(agentId, topicId);
+          setLoadingSummary(false);
+          setMessages([{
+            id: "welcome-training",
+            role: "agent",
+            content: `I'm ready to learn about **${topicName}**.\n\n**What I already know:**\n${summary}\n\nWhat else should I know?`,
+            timestamp: new Date(),
+          }]);
+        } else {
+          setMessages([{
+            id: "welcome-training",
+            role: "agent",
+            content: `I'm ready to learn about **${topicName}**. What should I know?`,
+            timestamp: new Date(),
+          }]);
+        }
+      }
+    };
+    loadInitialMessage();
+  }, [mode, agentName, topicName, topicId, agentId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -114,6 +131,11 @@ export function ChatWindow({
       newContext = userInput;
       setAccumulatedContext(newContext);
       setTrainingStep('answering');
+
+      // AUTO-SAVE Initial Context
+      if (topicId) {
+        api.addKnowledge(agentId, topicId, userInput).catch(err => console.error("Auto-save initial failed", err));
+      }
     } else {
       // User is answering a question. 
       // We assume they are answering the *first* unanswered question or providing general clarification.
@@ -128,6 +150,15 @@ export function ChatWindow({
 
       newContext += `\n\nQ: ${lastQuestion}\nA: ${userInput}`;
       setAccumulatedContext(newContext);
+
+      // AUTO-SAVE: Save this specific Q&A pair immediately
+      if (topicId) {
+        // We save it as a small chunk of knowledge. 
+        // The backend `addKnowledge` just embeds and stores text.
+        // So we can store "Q: ... A: ..."
+        const knowledgeText = `Q: ${lastQuestion}\nA: ${userInput}`;
+        api.addKnowledge(agentId, topicId, knowledgeText).catch(err => console.error("Auto-save failed", err));
+      }
     }
 
     // Analyze the updated context
@@ -159,42 +190,7 @@ export function ChatWindow({
     }
   };
 
-  const handleFinalize = async () => {
-    if (!topicId) return;
-    setLoading(true);
-    try {
-      // We pass the accumulated context as "original_text" and empty QA pairs because we've already merged them into the context string
-      // OR we can pass them separately if we want the backend to do the merging.
-      // The current backend `finalize_training` takes `original_text` and `qa_pairs`.
-      // Let's pass the *initial* text as original, and the collected pairs.
-      // But wait, `accumulatedContext` grew. 
-      // Let's just pass `accumulatedContext` as `original_text` and empty pairs, 
-      // because `crystallize_knowledge` just joins them anyway.
-      // Actually, let's be cleaner:
-      // We need to store the *very first* input separately if we want to distinguish.
-      // But for now, passing everything as `original_text` is fine, the LLM will sort it out.
 
-      await api.finalizeTraining(agentId, topicId, accumulatedContext, []);
-
-      const successMsg: Message = {
-        id: Date.now().toString(),
-        role: "agent",
-        content: "Knowledge finalized and saved successfully! I'm now ready to use this in conversations.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, successMsg]);
-
-      // Redirect after a moment
-      setTimeout(() => {
-        router.push(`/agent/${agentId}/training`);
-      }, 2000);
-    } catch (e) {
-      console.error(e);
-      alert("Failed to finalize knowledge");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -229,14 +225,9 @@ export function ChatWindow({
                 <span className="text-xs font-bold text-slate-700">{confidence}%</span>
               </div>
             </div>
-            <Button
-              size="sm"
-              className="bg-green-600 hover:bg-green-700 text-white gap-2"
-              onClick={handleFinalize}
-              disabled={loading || confidence === 0}
-            >
-              <CheckCircle size={14} /> Finalize
-            </Button>
+            <div className="flex items-center gap-1 text-green-600 text-xs font-medium animate-pulse">
+              <CheckCircle size={12} /> Auto-saving
+            </div>
           </div>
         )}
 
@@ -249,36 +240,45 @@ export function ChatWindow({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
-        <AnimatePresence initial={false}>
-          {messages.map((msg) => (
-            <motion.div
-              key={msg.id}
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.2 }}
-              className={cn(
-                "flex gap-3 max-w-[85%]",
-                msg.role === "user" ? "ml-auto flex-row-reverse" : ""
-              )}
-            >
-              <div className={cn(
-                "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                msg.role === "user" ? "bg-slate-900 text-white" : cn("bg-opacity-10", agentColor)
-              )}>
-                {msg.role === "user" ? <User size={14} /> : (mode === 'training' ? <GraduationCap size={14} className={agentColor.replace("bg-", "text-")} /> : <Bot size={14} className={agentColor.replace("bg-", "text-")} />)}
-              </div>
+        {loadingSummary && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="animate-spin text-blue-500" size={32} />
+            <span className="ml-3 text-slate-500 text-sm">Loading knowledge summary...</span>
+          </div>
+        )}
 
-              <div className={cn(
-                "p-3 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap",
-                msg.role === "user"
-                  ? "bg-slate-900 text-white rounded-tr-none"
-                  : "bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-tl-none"
-              )}>
-                {msg.content}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {!loadingSummary && (
+          <AnimatePresence initial={false}>
+            {messages.map((msg) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.2 }}
+                className={cn(
+                  "flex gap-3 max-w-[85%]",
+                  msg.role === "user" ? "ml-auto flex-row-reverse" : ""
+                )}
+              >
+                <div className={cn(
+                  "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                  msg.role === "user" ? "bg-slate-900 text-white" : cn("bg-opacity-10", agentColor)
+                )}>
+                  {msg.role === "user" ? <User size={14} /> : (mode === 'training' ? <GraduationCap size={14} className={agentColor.replace("bg-", "text-")} /> : <Bot size={14} className={agentColor.replace("bg-", "text-")} />)}
+                </div>
+
+                <div className={cn(
+                  "p-3 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap",
+                  msg.role === "user"
+                    ? "bg-slate-900 text-white rounded-tr-none"
+                    : "bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-tl-none"
+                )}>
+                  {msg.content}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        )}
 
         {loading && (
           <motion.div

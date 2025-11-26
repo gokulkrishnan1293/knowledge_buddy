@@ -43,3 +43,15 @@ class VectorStore:
         self.collection.delete(
             where={"$and": [{"agent_id": agent_id}, {"topic_id": topic_id}]}
         )
+
+    def get_documents(self, agent_id: str, topic_id: str):
+        """
+        Retrieves all documents for a specific topic.
+        """
+        results = self.collection.get(
+            where={"$and": [{"agent_id": agent_id}, {"topic_id": topic_id}]}
+        )
+        
+        if results["documents"]:
+            return results["documents"]
+        return []

@@ -133,8 +133,44 @@ def add_knowledge(agent_id: str, topic_id: str, request: KnowledgeRequest, db: S
     if topic:
         topic.doc_count += 1
         db.commit()
+    
+    # 4. Auto-close related knowledge gaps
+    # Find open gaps that might be related to this topic
+    open_gaps = db.query(KnowledgeGap).filter(
+        KnowledgeGap.agent_id == agent_id,
+        KnowledgeGap.status == "open"
+    ).all()
+    
+    # Close gaps if the topic name is similar to the gap question
+    if topic:
+        topic_lower = topic.name.lower()
+        for gap in open_gaps:
+            gap_lower = gap.question_text.lower()
+            # Simple heuristic: if topic name appears in gap question, close it
+            if topic_lower in gap_lower or any(word in gap_lower for word in topic_lower.split()):
+                gap.status = "closed"
+        db.commit()
         
     return {"status": "success", "message": "Knowledge added"}
+
+@app.get("/agents/{agent_id}/topics/{topic_id}/summary")
+def get_topic_summary(agent_id: str, topic_id: str, db: Session = Depends(get_db)):
+    """
+    Returns a summary of all knowledge for a specific topic.
+    """
+    # 1. Get all documents for this topic
+    docs = vector_store.get_documents(agent_id, topic_id)
+    
+    if not docs or len(docs) == 0:
+        return {"summary": "I don't know anything about this topic yet. Please teach me!"}
+    
+    # 2. Combine all documents
+    combined_text = "\n\n".join(docs)
+    
+    # 3. Generate summary
+    summary = llm_service.summarize_text(combined_text)
+    
+    return {"summary": summary}
 
 @app.post("/agents/{agent_id}/topics/{topic_id}/training/analyze")
 def analyze_training_text(agent_id: str, topic_id: str, request: AnalyzeRequest):
@@ -160,6 +196,58 @@ def finalize_training(agent_id: str, topic_id: str, request: FinalizeRequest, db
         db.commit()
         
     return {"status": "success", "crystallized_text": crystallized_text}
+
+@app.post("/agents/{agent_id}/gaps/resolve")
+def resolve_gap(agent_id: str, request: KnowledgeRequest, db: Session = Depends(get_db)):
+    """
+    Resolves a knowledge gap by finding an existing topic or creating a new one.
+    """
+    gap_text = request.text
+    
+    # 1. Search Vector DB for similar context to find existing topic
+    embedding = llm_service.get_embedding(gap_text)
+    # We need a way to get the topic_id from the search result. 
+    # The current vector_store.search returns text. We need metadata.
+    # Let's assume for now we create a new topic if it's a gap, OR we rely on the user to pick.
+    # But the requirement is "find closest match topic".
+    # We need to update VectorStore.search to return metadata or use a new method.
+    
+    # For this iteration, let's try to find a topic by name similarity or just create a new one if it's distinct.
+    # Actually, let's use the LLM to suggest a name, then check if that topic exists.
+    
+    suggested_name = llm_service.suggest_topic_name(gap_text)
+    
+    # Check if topic exists (case-insensitive partial match)
+    # First try exact match (case-insensitive)
+    existing_topic = db.query(Topic).filter(
+        Topic.agent_id == agent_id, 
+        Topic.name.ilike(suggested_name)
+    ).first()
+    
+    # If no exact match, try partial match (e.g., "Rendering" matches "Rendering Overview")
+    if not existing_topic:
+        topics = db.query(Topic).filter(Topic.agent_id == agent_id).all()
+        suggested_lower = suggested_name.lower()
+        for topic in topics:
+            topic_lower = topic.name.lower()
+            # Check if either name contains the other
+            if suggested_lower in topic_lower or topic_lower in suggested_lower:
+                existing_topic = topic
+                break
+    
+    if existing_topic:
+        return {"topic_id": existing_topic.id, "topic_name": existing_topic.name, "action": "found"}
+    
+    # Create new topic
+    new_topic = Topic(
+        id=str(uuid.uuid4()),
+        agent_id=agent_id,
+        name=suggested_name
+    )
+    db.add(new_topic)
+    db.commit()
+    
+    return {"topic_id": new_topic.id, "topic_name": new_topic.name, "action": "created"}
 
 # --- KNOWLEDGE GAPS ---
 

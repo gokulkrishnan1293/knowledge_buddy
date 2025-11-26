@@ -150,5 +150,29 @@ export const api = {
       console.error("Error finalizing training:", error);
       return null;
     }
+  },
+
+  // 11. RESOLVE GAP
+  resolveGap: async (agentId: string, text: string) => {
+    try {
+      const response = await axios.post(`${API_URL}/agents/${agentId}/gaps/resolve`, {
+        text: text
+      });
+      return response.data; // { topic_id, topic_name, action }
+    } catch (error) {
+      console.error("Error resolving gap:", error);
+      return null;
+    }
+  },
+
+  // 12. GET TOPIC SUMMARY
+  getTopicSummary: async (agentId: string, topicId: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/agents/${agentId}/topics/${topicId}/summary`);
+      return response.data.summary;
+    } catch (error) {
+      console.error("Error fetching topic summary:", error);
+      return "I don't know anything about this topic yet.";
+    }
   }
 };
