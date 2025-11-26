@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import time
 
 class GoogleLLMService:
     def __init__(self):
@@ -35,6 +36,7 @@ class GoogleLLMService:
         """
         Generates a response using gemini-1.5-flash.
         Supports tool calling if skills are provided.
+        Includes retry logic for rate limiting (429 errors).
         """
         if not self.api_key:
             return "I'm sorry, I can't answer that right now because my brain (API Key) is missing."
@@ -73,38 +75,64 @@ class GoogleLLMService:
             if tools:
                 payload["tools"] = [{"function_declarations": tools}]
 
-        try:
-            response = requests.post(url, headers=headers, data=json.dumps(payload))
-            response.raise_for_status()
-            data = response.json()
-            
-            # Check for Tool Calls
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return "I'm not sure what to say."
+        # Retry logic for rate limiting
+        max_retries = 3
+        base_delay = 1  # Start with 1 second
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, headers=headers, data=json.dumps(payload))
                 
-            content = candidates[0].get("content", {})
-            parts = content.get("parts", [])
-            
-            if not parts:
-                 return "I'm not sure what to say."
+                # Handle rate limiting
+                if response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                        print(f"Rate limited (429). Retrying in {delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        return "I'm experiencing high demand right now. Please try again in a moment."
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                # Check for Tool Calls
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    return "I'm not sure what to say."
+                    
+                content = candidates[0].get("content", {})
+                parts = content.get("parts", [])
+                
+                if not parts:
+                     return "I'm not sure what to say."
 
-            # Look for function call in parts
-            for part in parts:
-                if "functionCall" in part:
-                    fn_call = part["functionCall"]
-                    return {
-                        "tool_call": True,
-                        "name": fn_call["name"],
-                        "args": fn_call.get("args", {})
-                    }
+                # Look for function call in parts
+                for part in parts:
+                    if "functionCall" in part:
+                        fn_call = part["functionCall"]
+                        return {
+                            "tool_call": True,
+                            "name": fn_call["name"],
+                            "args": fn_call.get("args", {})
+                        }
 
-            # Normal text response
-            return parts[0]["text"]
-            
-        except Exception as e:
-            print(f"Error generating response: {e}")
-            return "I encountered an error while thinking."
+                # Normal text response
+                return parts[0]["text"]
+                
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429 and attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    print(f"Rate limited (429). Retrying in {delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                print(f"HTTP Error generating response: {e}")
+                return "I encountered an error while thinking."
+            except Exception as e:
+                print(f"Error generating response: {e}")
+                return "I encountered an error while thinking."
+        
+        return "I'm experiencing high demand right now. Please try again in a moment."
 
     def analyze_text(self, text: str):
         """
