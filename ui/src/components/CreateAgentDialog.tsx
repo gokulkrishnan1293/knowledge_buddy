@@ -15,9 +15,10 @@ interface CreateAgentDialogProps {
 export function CreateAgentDialog({ trigger, onAgentCreated }: CreateAgentDialogProps) {
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    // 1. Removed Personality State
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
-    const [personality, setPersonality] = useState("");
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,8 +27,8 @@ export function CreateAgentDialog({ trigger, onAgentCreated }: CreateAgentDialog
         const newAgent = {
             name,
             description,
-            personality,
-            color: "bg-blue-500", // Default color for now
+            // 2. Personality removed from payload (Backend handles it as optional/null)
+            color: "bg-blue-500",
         };
 
         const result = await api.createAgent(newAgent);
@@ -37,7 +38,6 @@ export function CreateAgentDialog({ trigger, onAgentCreated }: CreateAgentDialog
             setOpen(false);
             setName("");
             setDescription("");
-            setPersonality("");
             if (onAgentCreated) onAgentCreated();
         }
     };
@@ -68,7 +68,8 @@ export function CreateAgentDialog({ trigger, onAgentCreated }: CreateAgentDialog
                             id="name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder="e.g., Sales Buddy"
+                            // 3. Updated Placeholder
+                            placeholder="Agent Name"
                             className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:placeholder:text-slate-400 dark:focus-visible:ring-blue-500"
                             required
                         />
@@ -82,23 +83,13 @@ export function CreateAgentDialog({ trigger, onAgentCreated }: CreateAgentDialog
                             id="description"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder="What does this agent do?"
+                            // 4. Updated Placeholder
+                            placeholder="Agent Description"
                             required
                         />
                     </div>
 
-                    <div className="grid gap-2">
-                        <label htmlFor="personality" className="text-sm font-medium">
-                            Personality & Instructions
-                        </label>
-                        <Textarea
-                            id="personality"
-                            value={personality}
-                            onChange={(e) => setPersonality(e.target.value)}
-                            placeholder="e.g., Be professional, concise, and helpful."
-                            className="h-24"
-                        />
-                    </div>
+                    {/* 5. Removed Personality Field Block Entirely */}
 
                     <DialogFooter className="mt-4">
                         <Button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700">

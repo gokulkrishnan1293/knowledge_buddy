@@ -9,7 +9,6 @@ class Agent(Base):
     description = Column(Text)
     status = Column(String, default="active") # active, training, idle
     color = Column(String, default="bg-blue-500")
-    personality = Column(Text, nullable=True)
 
 class KnowledgeGap(Base):
     __tablename__ = "knowledge_gaps"
@@ -43,6 +42,7 @@ class ChatMessage(Base):
     id = Column(String, primary_key=True, index=True)
     conversation_id = Column(String, ForeignKey("conversations.id"), nullable=True)
     agent_id = Column(String, ForeignKey("agents.id"))
-    role = Column(String)  # "user" or "agent"
+    role = Column(String)
     content = Column(Text)
-    timestamp = Column(String)  # ISO format timestamp
+    timestamp = Column(String)
+    rating = Column(Integer, default=0)

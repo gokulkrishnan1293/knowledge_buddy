@@ -35,3 +35,6 @@ class AnalyzeRequest(BaseModel):
 class FinalizeRequest(BaseModel):
     original_text: str
     qa_pairs: List[dict] # [{"q": "...", "a": "..."}]
+
+class FeedbackRequest(BaseModel):
+    rating: int

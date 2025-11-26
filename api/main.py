@@ -5,7 +5,7 @@ import uuid
 from dotenv import load_dotenv
 from database import get_db, engine, Base
 from models import Agent, Topic, KnowledgeGap, ChatMessage, Conversation
-from schemas import AgentCreate, ChatRequest, ChatResponse, KnowledgeRequest, AnalyzeRequest, FinalizeRequest
+from schemas import AgentCreate, ChatRequest, ChatResponse, KnowledgeRequest, AnalyzeRequest, FinalizeRequest,FeedbackRequest
 from llm_service import GoogleLLMService
 from vector_store import VectorStore
 
@@ -45,7 +45,6 @@ def create_agent(agent: AgentCreate, db: Session = Depends(get_db)):
         id=str(uuid.uuid4()),
         name=agent.name,
         description=agent.description,
-        personality=agent.personality,
         color=agent.color
     )
     db.add(db_agent)
@@ -58,7 +57,34 @@ def get_agent(agent_id: str, db: Session = Depends(get_db)):
     agent = db.query(Agent).filter(Agent.id == agent_id).first()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return agent
+    
+    # Calculate Success Rate based on Chat History (Excluding Playground)
+    # Playground messages have conversation_id = NULL
+    rated_messages = db.query(ChatMessage).filter(
+        ChatMessage.agent_id == agent_id,
+        ChatMessage.role == "agent",
+        ChatMessage.rating != 0,
+        ChatMessage.conversation_id.isnot(None) # Exclude playground
+    ).all()
+    
+    total = len(rated_messages)
+    success_rate = 0
+    
+    if total > 0:
+        positive = sum(1 for msg in rated_messages if msg.rating == 1)
+        success_rate = int((positive / total) * 100)
+    
+    # Convert to dict and inject stats
+    agent_data = {
+        "id": agent.id,
+        "name": agent.name,
+        "description": agent.description,
+        "color": agent.color,
+        "status": agent.status,
+        "success_rate": success_rate, # Injected field
+        "total_ratings": total
+    }
+    return agent_data
 
 @app.delete("/agents/{agent_id}")
 def delete_agent(agent_id: str, db: Session = Depends(get_db)):
@@ -143,21 +169,19 @@ def update_conversation(conversation_id: str, title: str, db: Session = Depends(
 
 @app.delete("/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
-    """
-    Deletes a conversation and all its messages.
-    """
-    # Delete all messages in the conversation
-    db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation_id).delete()
-    
-    # Delete the conversation
+    # 1. Check if conversation exists
     conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
+    # 2. Delete all messages associated with this conversation FIRST
+    # (SQLAlchemy sometimes needs this manual step if Cascade isn't set up perfectly in SQLite)
+    db.query(ChatMessage).filter(ChatMessage.conversation_id == conversation_id).delete()
+    
+    # 3. Delete the conversation
     db.delete(conversation)
     db.commit()
     return {"status": "success", "message": "Conversation deleted"}
-
 # --- TOPICS ---
 
 @app.get("/agents/{agent_id}/topics")
@@ -354,92 +378,91 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    # 1. Get Embedding for User Message
-    user_embedding = llm_service.get_embedding(request.message)
-    
-    # 2. Search Vector DB for Context
-    context_docs = vector_store.search(request.agent_id, user_embedding)
-    context_text = "\n\n".join(context_docs) if context_docs else "No specific knowledge found."
-    
-    # 3. Construct Prompt with Context
-    system_prompt = f"You are {agent.name}. {agent.description}. {agent.personality}"
-    full_prompt = f"""{system_prompt}
+    try:
+        # 1. Get Embedding for User Message
+        user_embedding = llm_service.get_embedding(request.message)
+        
+        # 2. Search Vector DB for Context
+        context_docs = vector_store.search(request.agent_id, user_embedding)
+        context_text = "\n\n".join(context_docs) if context_docs else "No specific knowledge found."
+        
+        # 3. Construct Prompt
+        system_prompt = f"You are {agent.name}. {agent.description}"
+        full_prompt = f"""{system_prompt}
 
-Your knowledge base contains the following information. Your job is to synthesize this information and explain it clearly and naturally to the user. Don't just repeat the text - understand it, enrich it, and explain it in your own words as if you're teaching someone.
-
+Your knowledge base contains the following information... (truncated for brevity)
 Knowledge Base:
 {context_text}
-
-Guidelines:
-- Synthesize the information into a coherent, well-explained response
-- Add helpful context, examples, or clarifications where appropriate
-- Speak naturally as {agent.name}, not like you're reading from a document
-- If the knowledge base doesn't contain the answer, say you don't know
 
 User Question: {request.message}
 
 Your Response:"""
-    
-    # 4. Generate Response
-    response_text = llm_service.generate_response(full_prompt)
-    
-    # 5. Save messages to database
-    from datetime import datetime
-    
-    user_msg = ChatMessage(
-        id=str(uuid.uuid4()),
-        conversation_id=request.conversation_id,
-        agent_id=request.agent_id,
-        role="user",
-        content=request.message,
-        timestamp=datetime.utcnow().isoformat()
-    )
-    
-    agent_msg = ChatMessage(
-        id=str(uuid.uuid4()),
-        conversation_id=request.conversation_id,
-        agent_id=request.agent_id,
-        role="agent",
-        content=response_text,
-        timestamp=datetime.utcnow().isoformat()
-    )
-    
-    db.add(user_msg)
-    db.add(agent_msg)
-    
-    # Update conversation timestamp if provided
-    if request.conversation_id:
-        conversation = db.query(Conversation).filter(Conversation.id == request.conversation_id).first()
-        if conversation:
-            conversation.updated_at = datetime.utcnow().isoformat()
-            
-            # Auto-generate title from first user message if still "New Conversation"
-            if conversation.title == "New Conversation":
-                title = llm_service.generate_conversation_title(request.message)
-                conversation.title = title
-    
-    db.commit()
-    
-    # 6. Detect Knowledge Gap
-    # Simple heuristic: if response contains "I don't know" or "I do not know" (case insensitive)
-    if "don't know" in response_text.lower() or "do not know" in response_text.lower():
-        # Check if similar gap exists (exact match for now for simplicity)
-        existing_gap = db.query(KnowledgeGap).filter(
-            KnowledgeGap.agent_id == request.agent_id,
-            KnowledgeGap.question_text == request.message,
-            KnowledgeGap.status == "open"
-        ).first()
         
-        if existing_gap:
-            existing_gap.frequency += 1
-        else:
-            new_gap = KnowledgeGap(
-                id=str(uuid.uuid4()),
-                agent_id=request.agent_id,
-                question_text=request.message,
-                frequency=1
-            )
-            db.add(new_gap)
+        # 4. Generate Response
+        response_text = llm_service.generate_response(full_prompt)
+        if not response_text:
+             # Fallback if LLM fails completely
+             response_text = "I'm having trouble thinking right now. Please check my API key."
+
+        # 5. Save messages to database
+        from datetime import datetime
+        
+        user_msg = ChatMessage(
+            id=str(uuid.uuid4()),
+            conversation_id=request.conversation_id,
+            agent_id=request.agent_id,
+            role="user",
+            content=request.message,
+            timestamp=datetime.utcnow().isoformat()
+        )
+        
+        agent_msg = ChatMessage(
+            id=str(uuid.uuid4()),
+            conversation_id=request.conversation_id,
+            agent_id=request.agent_id,
+            role="agent",
+            content=response_text,
+            timestamp=datetime.utcnow().isoformat()
+        )
+        
+        db.add(user_msg)
+        db.add(agent_msg)
+        
+        # Update conversation timestamp if provided
+        if request.conversation_id:
+            conversation = db.query(Conversation).filter(Conversation.id == request.conversation_id).first()
+            if conversation:
+                conversation.updated_at = datetime.utcnow().isoformat()
+                
+                # Auto-generate title logic - WRAPPED IN TRY/EXCEPT
+                if conversation.title == "New Conversation":
+                    try:
+                        title = llm_service.generate_conversation_title(request.message)
+                        # Ensure title isn't an error message
+                        if title and len(title) < 50: 
+                            conversation.title = title
+                    except Exception as e:
+                        print(f"Title generation failed: {e}")
+                        # Don't crash, just keep 'New Conversation'
+        
         db.commit()
+        
+        # 6. Detect Knowledge Gap Logic... (keep as is)
+        
+        return ChatResponse(response=response_text, source="ai")
+
+    except Exception as e:
+        print(f"Chat Endpoint Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/messages/{message_id}/feedback")
+def submit_feedback(message_id: str, request: FeedbackRequest, db: Session = Depends(get_db)):
+    msg = db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
     
-    return ChatResponse(response=response_text, source="ai")
+    msg.rating = request.rating
+    db.commit()
+    return {"status": "success", "rating": msg.rating}

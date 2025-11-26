@@ -1,3 +1,4 @@
+// src/app/chat/page.tsx
 "use client";
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -37,6 +38,12 @@ export default function ChatPage() {
             setConversations([newConv, ...conversations]);
             setActiveConversation(newConv);
         }
+    };
+
+    // NEW: Function to refresh the list when title changes
+    const handleMessageSent = () => {
+        // Refresh conversation list to show new titles/timestamps
+        loadConversations();
     };
 
     return (
@@ -113,6 +120,7 @@ export default function ChatPage() {
                             conversationId={activeConversation.id}
                             agents={agents}
                             onAgentChange={setSelectedAgent}
+                            onMessageSent={handleMessageSent} // Passed down here
                         />
                     ) : (
                         <div className="h-full flex items-center justify-center">

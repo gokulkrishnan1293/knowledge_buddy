@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Loader2, Sparkles, GraduationCap, CheckCircle } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, GraduationCap, CheckCircle, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
@@ -15,6 +15,7 @@ interface Message {
   role: "user" | "agent";
   content: string;
   timestamp: Date;
+  rating?: number; // 1 = Like, -1 = Dislike, 0 or undefined = None
 }
 
 interface ChatWindowProps {
@@ -27,6 +28,7 @@ interface ChatWindowProps {
   conversationId?: string;
   agents?: any[];
   onAgentChange?: (agent: any) => void;
+  onMessageSent?: () => void;
 }
 
 export function ChatWindow({
@@ -38,7 +40,8 @@ export function ChatWindow({
   topicName,
   conversationId,
   agents,
-  onAgentChange
+  onAgentChange,
+  onMessageSent
 }: ChatWindowProps) {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -57,21 +60,19 @@ export function ChatWindow({
   useEffect(() => {
     const loadInitialMessage = async () => {
       if (mode === 'chat') {
-        // For conversation-based chat, load messages from conversation
         if (conversationId) {
           const history = await api.getConversationMessages(conversationId);
 
           if (history && history.length > 0) {
-            // Convert history to messages
             const historyMessages = history.map((msg: any) => ({
               id: msg.id,
               role: msg.role,
               content: msg.content,
-              timestamp: new Date(msg.timestamp)
+              timestamp: new Date(msg.timestamp),
+              rating: msg.rating // Load existing rating from DB
             }));
             setMessages(historyMessages);
           } else {
-            // No history, show welcome message
             setMessages([{
               id: "welcome",
               role: "agent",
@@ -80,7 +81,6 @@ export function ChatWindow({
             }]);
           }
         } else {
-          // No conversation selected, show welcome
           setMessages([{
             id: "welcome",
             role: "agent",
@@ -89,7 +89,7 @@ export function ChatWindow({
           }]);
         }
       } else {
-        // Training mode - fetch summary
+        // Training mode
         if (topicId) {
           setLoadingSummary(true);
           const summary = await api.getTopicSummary(agentId, topicId);
@@ -111,7 +111,7 @@ export function ChatWindow({
       }
     };
     loadInitialMessage();
-  }, [mode, topicName, topicId, agentId, conversationId]); // Only reload when conversation changes, not agent
+  }, [mode, topicName, topicId, conversationId]); // agentId removed to prevent full reload on switch
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -135,27 +135,54 @@ export function ChatWindow({
 
     try {
       if (mode === 'chat') {
-        // Use conversation-based chat API
         const response = conversationId
           ? await api.chatWithConversation(agentId, userMsg.content, conversationId)
           : await api.chat(agentId, userMsg.content);
 
         const agentMsg: Message = {
-          id: (Date.now() + 1).toString(),
+          id: (Date.now() + 1).toString(), // Temporary ID, normally backend returns this
           role: "agent",
           content: response.response,
           timestamp: new Date(),
         };
+
+        // If the backend returns the message ID in response, use it here.
+        // For now, if we want to rate immediately, we might need to reload or update the ID.
+        // Assuming api.chat returns just text. If we want to rate "just sent" messages, 
+        // we'd ideally need the ID. For history messages, ID is correct.
+
         setMessages((prev) => [...prev, agentMsg]);
+
+        if (onMessageSent) {
+          onMessageSent();
+        }
       } else {
-        // TRAINING MODE
         await handleTrainingFlow(userMsg.content);
       }
-    } catch (error) {
-      console.error("Chat error:", error);
+    } catch (error: any) {
+      const errorMsg: Message = {
+        id: Date.now().toString(),
+        role: "agent",
+        content: `⚠️ Error: ${error.message || "Unknown error occurred"}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRate = async (messageId: string, rating: number) => {
+    // 1. Optimistic UI Update
+    setMessages(prev => prev.map(msg =>
+      msg.id === messageId ? { ...msg, rating } : msg
+    ));
+
+    // 2. API Call
+    // Note: If messageId is generated on frontend (Date.now), this will fail 
+    // until the message is reloaded from backend with real ID.
+    // In a real app, the chat response should return the real Message ID.
+    await api.submitFeedback(messageId, rating);
   };
 
   const handleTrainingFlow = async (userInput: string) => {
@@ -166,18 +193,10 @@ export function ChatWindow({
       newContext = userInput;
       setAccumulatedContext(newContext);
       setTrainingStep('answering');
-
-      // AUTO-SAVE Initial Context
       if (topicId) {
         api.addKnowledge(agentId, topicId, userInput).catch(err => console.error("Auto-save initial failed", err));
       }
     } else {
-      // User is answering a question. 
-      // We assume they are answering the *first* unanswered question or providing general clarification.
-      // For simplicity, we just append their answer to the context as a generic clarification for now, 
-      // or we could try to map it to the last asked question.
-      // Let's append it as: "Q: [Last Question] A: [User Input]" if we have questions.
-
       const lastQuestion = currentQuestions.length > 0 ? currentQuestions[0] : "General Clarification";
       const qaEntry = { q: lastQuestion, a: userInput };
       newQaPairs.push(qaEntry);
@@ -186,17 +205,12 @@ export function ChatWindow({
       newContext += `\n\nQ: ${lastQuestion}\nA: ${userInput}`;
       setAccumulatedContext(newContext);
 
-      // AUTO-SAVE: Save this specific Q&A pair immediately
       if (topicId) {
-        // We save it as a small chunk of knowledge. 
-        // The backend `addKnowledge` just embeds and stores text.
-        // So we can store "Q: ... A: ..."
         const knowledgeText = `Q: ${lastQuestion}\nA: ${userInput}`;
         api.addKnowledge(agentId, topicId, knowledgeText).catch(err => console.error("Auto-save failed", err));
       }
     }
 
-    // Analyze the updated context
     if (topicId) {
       const analysis = await api.analyzeTrainingText(agentId, topicId, newContext);
 
@@ -224,8 +238,6 @@ export function ChatWindow({
       }
     }
   };
-
-
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -302,13 +314,41 @@ export function ChatWindow({
                   {msg.role === "user" ? <User size={14} /> : (mode === 'training' ? <GraduationCap size={14} className={agentColor.replace("bg-", "text-")} /> : <Bot size={14} className={agentColor.replace("bg-", "text-")} />)}
                 </div>
 
-                <div className={cn(
-                  "p-3 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap",
-                  msg.role === "user"
-                    ? "bg-slate-900 text-white rounded-tr-none"
-                    : "bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-tl-none"
-                )}>
-                  {msg.content}
+                <div className="group relative">
+                  <div className={cn(
+                    "p-3 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap",
+                    msg.role === "user"
+                      ? "bg-slate-900 text-white rounded-tr-none"
+                      : "bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-tl-none"
+                  )}>
+                    {msg.content}
+                  </div>
+
+                  {/* Rating Buttons - Only for Agents in Chat Mode with a real Conversation */}
+                  {msg.role === 'agent' && mode === 'chat' && conversationId && (
+                    <div className="absolute -bottom-7 left-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+                      <button
+                        onClick={() => handleRate(msg.id, 1)}
+                        className={cn(
+                          "p-1.5 rounded-full hover:bg-green-50 transition-colors",
+                          msg.rating === 1 ? "text-green-600 bg-green-50" : "text-slate-400"
+                        )}
+                        title="Helpful"
+                      >
+                        <ThumbsUp size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleRate(msg.id, -1)}
+                        className={cn(
+                          "p-1.5 rounded-full hover:bg-red-50 transition-colors",
+                          msg.rating === -1 ? "text-red-600 bg-red-50" : "text-slate-400"
+                        )}
+                        title="Not Helpful"
+                      >
+                        <ThumbsDown size={12} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ))}

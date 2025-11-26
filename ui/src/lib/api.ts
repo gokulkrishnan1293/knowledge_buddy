@@ -4,7 +4,8 @@ import axios from 'axios';
 const API_URL = 'http://localhost:8000';
 
 export const api = {
-  // 1. GET ALL AGENTS
+  // ... keep existing getAgents, getAgentById, createAgent, deleteAgent ...
+
   getAgents: async () => {
     try {
       const response = await axios.get(`${API_URL}/agents`);
@@ -15,7 +16,6 @@ export const api = {
     }
   },
 
-  // 2. GET SINGLE AGENT
   getAgentById: async (id: string) => {
     try {
       const response = await axios.get(`${API_URL}/agents/${id}`);
@@ -26,7 +26,6 @@ export const api = {
     }
   },
 
-  // 3. CREATE AGENT
   createAgent: async (agent: any) => {
     try {
       const response = await axios.post(`${API_URL}/agents`, agent);
@@ -37,7 +36,6 @@ export const api = {
     }
   },
 
-  // 3b. DELETE AGENT
   deleteAgent: async (id: string) => {
     try {
       await axios.delete(`${API_URL}/agents/${id}`);
@@ -48,7 +46,7 @@ export const api = {
     }
   },
 
-  // 4. CHAT
+  // --- FIXING CHAT TO SHOW REAL ERRORS ---
   chat: async (agentId: string, message: string) => {
     try {
       const response = await axios.post(`${API_URL}/chat`, {
@@ -56,13 +54,30 @@ export const api = {
         message: message
       });
       return response.data;
-    } catch (error) {
-      console.error("Error chatting:", error);
-      return { response: "Error connecting to agent.", source: "error" };
+    } catch (error: any) {
+      console.error("Error chatting:", error.response?.data || error.message);
+      // Return the actual error message from backend if available
+      const errorMessage = error.response?.data?.detail || "Error connecting to agent.";
+      throw new Error(errorMessage);
     }
   },
 
-  // 5. FETCH GAPS
+  chatWithConversation: async (agentId: string, message: string, conversationId?: string) => {
+    try {
+      const response = await axios.post(`${API_URL}/chat`, {
+        agent_id: agentId,
+        message: message,
+        conversation_id: conversationId
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error("Error chatting:", error.response?.data || error.message);
+      const errorMessage = error.response?.data?.detail || "Error connecting to agent.";
+      throw new Error(errorMessage);
+    }
+  },
+  // --- END FIX ---
+
   getKnowledgeGaps: async (agentId: string) => {
     try {
       const response = await axios.get(`${API_URL}/agents/${agentId}/gaps`);
@@ -73,7 +88,6 @@ export const api = {
     }
   },
 
-  // 5a. GET TOPICS
   getTopics: async (agentId: string) => {
     try {
       const response = await axios.get(`${API_URL}/agents/${agentId}/topics`);
@@ -84,7 +98,6 @@ export const api = {
     }
   },
 
-  // 5b. CREATE TOPIC
   createTopic: async (agentId: string, name: string) => {
     try {
       const response = await axios.post(`${API_URL}/agents/${agentId}/topics?name=${encodeURIComponent(name)}`);
@@ -95,7 +108,6 @@ export const api = {
     }
   },
 
-  // 6. ADD KNOWLEDGE
   addKnowledge: async (agentId: string, topicId: string, text: string) => {
     try {
       const response = await axios.post(`${API_URL}/agents/${agentId}/topics/${topicId}/knowledge`, {
@@ -108,13 +120,11 @@ export const api = {
     }
   },
 
-  // 7. TEACH AGENT (Mock for now)
   teachAgent: async (gapId: string, answer: string) => {
     console.log(`Trained Gap ${gapId} with: ${answer}`);
     return { success: true };
   },
 
-  // 8. DELETE TOPIC
   deleteTopic: async (agentId: string, topicId: string) => {
     try {
       await axios.delete(`${API_URL}/agents/${agentId}/topics/${topicId}`);
@@ -125,47 +135,43 @@ export const api = {
     }
   },
 
-  // 9. APPRENTICE MODE: ANALYZE
   analyzeTrainingText: async (agentId: string, topicId: string, text: string) => {
     try {
       const response = await axios.post(`${API_URL}/agents/${agentId}/topics/${topicId}/training/analyze`, {
         text: text
       });
-      return response.data; // { questions: [...] }
+      return response.data;
     } catch (error) {
       console.error("Error analyzing text:", error);
       return null;
     }
   },
 
-  // 10. APPRENTICE MODE: FINALIZE
   finalizeTraining: async (agentId: string, topicId: string, originalText: string, qaPairs: any[]) => {
     try {
       const response = await axios.post(`${API_URL}/agents/${agentId}/topics/${topicId}/training/finalize`, {
         original_text: originalText,
         qa_pairs: qaPairs
       });
-      return response.data; // { status: "success", crystallized_text: "..." }
+      return response.data;
     } catch (error) {
       console.error("Error finalizing training:", error);
       return null;
     }
   },
 
-  // 11. RESOLVE GAP
   resolveGap: async (agentId: string, text: string) => {
     try {
       const response = await axios.post(`${API_URL}/agents/${agentId}/gaps/resolve`, {
         text: text
       });
-      return response.data; // { topic_id, topic_name, action }
+      return response.data;
     } catch (error) {
       console.error("Error resolving gap:", error);
       return null;
     }
   },
 
-  // 12. GET TOPIC SUMMARY
   getTopicSummary: async (agentId: string, topicId: string) => {
     try {
       const response = await axios.get(`${API_URL}/agents/${agentId}/topics/${topicId}/summary`);
@@ -176,7 +182,6 @@ export const api = {
     }
   },
 
-  // 13. GET CHAT HISTORY
   getChatHistory: async (agentId: string) => {
     try {
       const response = await axios.get(`${API_URL}/agents/${agentId}/chat/history`);
@@ -187,7 +192,6 @@ export const api = {
     }
   },
 
-  // 14. CONVERSATIONS
   createConversation: async () => {
     try {
       const response = await axios.post(`${API_URL}/conversations`);
@@ -238,18 +242,13 @@ export const api = {
     }
   },
 
-  // Update chat to include conversation_id
-  chatWithConversation: async (agentId: string, message: string, conversationId?: string) => {
+  submitFeedback: async (messageId: string, rating: number) => {
     try {
-      const response = await axios.post(`${API_URL}/chat`, {
-        agent_id: agentId,
-        message: message,
-        conversation_id: conversationId
-      });
-      return response.data;
+      await axios.post(`${API_URL}/messages/${messageId}/feedback`, { rating });
+      return true;
     } catch (error) {
-      console.error("Error chatting:", error);
-      return { response: "Error connecting to agent.", source: "error" };
+      console.error("Error submitting feedback:", error);
+      return false;
     }
-  }
+  },
 };

@@ -12,7 +12,6 @@ import {
   Loader2,
   BrainCircuit,
   CheckCircle2,
-  AlertCircle,
   Trash2
 } from "lucide-react";
 import { api } from "@/lib/api";
@@ -22,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 export default function AgentOverview() {
   const params = useParams();
@@ -78,6 +78,27 @@ export default function AgentOverview() {
     );
   }
 
+  // Calculate stats for display
+  const successRate = agent.success_rate || 0;
+  const totalRatings = agent.total_ratings || 0;
+
+  // Determine status label and color
+  let statusLabel = "No Data";
+  let statusColor = "bg-slate-100 text-slate-700";
+
+  if (totalRatings > 0) {
+    if (successRate >= 80) {
+      statusLabel = "Excellent";
+      statusColor = "bg-green-100 text-green-700";
+    } else if (successRate >= 50) {
+      statusLabel = "Average";
+      statusColor = "bg-yellow-100 text-yellow-700";
+    } else {
+      statusLabel = "Needs Work";
+      statusColor = "bg-red-100 text-red-700";
+    }
+  }
+
   return (
     <div className="h-full flex flex-col p-6 gap-6">
 
@@ -88,10 +109,8 @@ export default function AgentOverview() {
           <p className="text-slate-500 text-sm">{agent.description}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" className="h-9">Export Report</Button>
-          <Button size="sm" className="h-9 bg-black hover:bg-slate-800">
-            <Zap size={14} className="mr-2" /> Quick Test
-          </Button>
+          {/* Export and Quick Test buttons removed as requested */}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -142,8 +161,7 @@ export default function AgentOverview() {
                 const x = Math.cos(angle) * radius;
                 const y = Math.sin(angle) * radius;
 
-                // Convert to percentage for CSS positioning (center is 50%, 50%)
-                // We map -radius..radius to roughly 20%..80%
+                // Convert to percentage for CSS positioning
                 const left = 50 + (x / 300) * 100;
                 const top = 50 + (y / 200) * 100;
 
@@ -171,8 +189,7 @@ export default function AgentOverview() {
                   const radius = 150;
                   const x = Math.cos(angle) * radius;
                   const y = Math.sin(angle) * radius;
-                  // Map to SVG coordinates (0..100%)
-                  // Assuming container is roughly square-ish for lines, but let's use %
+
                   const x2 = 50 + (x / 300) * 100;
                   const y2 = 50 + (y / 200) * 100;
 
@@ -197,11 +214,13 @@ export default function AgentOverview() {
           <Card className="p-5 border-slate-200 shadow-none bg-white flex flex-col justify-center gap-4 shrink-0">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-slate-400 uppercase">Performance</span>
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Excellent</span>
+              <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", statusColor)}>
+                {statusLabel}
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-slate-50 rounded-lg">
-                <div className="text-2xl font-bold text-slate-900">98%</div>
+                <div className="text-2xl font-bold text-slate-900">{successRate}%</div>
                 <div className="text-xs text-slate-500">Success Rate</div>
               </div>
               <div className="p-3 bg-slate-50 rounded-lg">

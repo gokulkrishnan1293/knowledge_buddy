@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { Plus, Bot, Search, Sparkles, MessageSquare } from 'lucide-react';
+import { Bot, Search, Sparkles, MessageSquare } from 'lucide-react';
 import { AgentCard } from '@/components/AgentCard';
 import { CreateAgentDialog } from '@/components/CreateAgentDialog';
 import { motion } from 'framer-motion';
@@ -26,21 +26,6 @@ export default function Dashboard() {
     };
     init();
   }, []);
-
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0 }
-  };
 
   return (
     <div className="min-h-screen bg-background font-sans selection:bg-blue-500/30">
@@ -87,12 +72,21 @@ export default function Dashboard() {
           </div>
 
           <div className="flex gap-3">
-            <Link href="/chat">
-              <Button className="bg-slate-600 hover:bg-slate-700 text-white">
+            {/* LOGIC: Only show Chat link if agents exist */}
+            {agents.length > 0 ? (
+              <Link href="/chat">
+                <Button className="bg-slate-600 hover:bg-slate-700 text-white">
+                  <MessageSquare size={18} className="mr-2" />
+                  Chat
+                </Button>
+              </Link>
+            ) : (
+              <Button disabled className="opacity-50 cursor-not-allowed bg-slate-400 text-white" title="Create an agent first">
                 <MessageSquare size={18} className="mr-2" />
                 Chat
               </Button>
-            </Link>
+            )}
+
             <CreateAgentDialog onAgentCreated={loadAgents} />
           </div>
         </motion.div>

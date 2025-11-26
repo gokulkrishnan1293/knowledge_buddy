@@ -11,6 +11,8 @@ interface ConversationListProps {
 }
 
 export function ConversationList({ conversations, activeConversation, onSelectConversation, onConversationDeleted }: ConversationListProps) {
+
+    // ... keep formatTime function ...
     const formatTime = (timestamp: string) => {
         const date = new Date(timestamp);
         const now = new Date();
@@ -25,10 +27,16 @@ export function ConversationList({ conversations, activeConversation, onSelectCo
     };
 
     const handleDelete = async (e: React.MouseEvent, conversationId: string) => {
+        // 1. Stop the click from bubbling up to the parent button (which selects the chat)
         e.stopPropagation();
+        e.preventDefault();
+
         if (confirm('Are you sure you want to delete this conversation?')) {
-            await api.deleteConversation(conversationId);
-            if (onConversationDeleted) {
+            // 2. Call API
+            const success = await api.deleteConversation(conversationId);
+
+            // 3. Only refresh if successful
+            if (success && onConversationDeleted) {
                 onConversationDeleted();
             }
         }
@@ -43,16 +51,16 @@ export function ConversationList({ conversations, activeConversation, onSelectCo
                 </div>
             ) : (
                 conversations.map((conv) => (
-                    <button
+                    <div
                         key={conv.id}
                         onClick={() => onSelectConversation(conv)}
                         className={cn(
-                            "w-full p-4 text-left border-b border-slate-100 hover:bg-slate-50 transition-colors relative",
+                            "w-full p-4 text-left border-b border-slate-100 hover:bg-slate-50 transition-colors relative cursor-pointer group",
                             activeConversation?.id === conv.id && "bg-blue-50 border-l-4 border-l-blue-600"
                         )}
                     >
                         <div className="flex items-start justify-between gap-2">
-                            <h3 className="font-semibold text-slate-900 text-sm truncate flex-1">
+                            <h3 className="font-semibold text-slate-900 text-sm truncate flex-1 pr-6">
                                 {conv.title}
                             </h3>
                             <div className="flex items-center gap-2 shrink-0">
@@ -60,16 +68,18 @@ export function ConversationList({ conversations, activeConversation, onSelectCo
                                     <Clock size={12} />
                                     {formatTime(conv.updated_at)}
                                 </span>
+
+                                {/* Delete Button - Now clearly separated */}
                                 <button
                                     onClick={(e) => handleDelete(e, conv.id)}
-                                    className="p-1 hover:bg-red-50 rounded transition-colors"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 hover:bg-red-100 rounded-full transition-colors opacity-0 group-hover:opacity-100"
                                     title="Delete conversation"
                                 >
-                                    <Trash2 size={14} className="text-slate-400 hover:text-red-500" />
+                                    <Trash2 size={14} className="text-red-500" />
                                 </button>
                             </div>
                         </div>
-                    </button>
+                    </div>
                 ))
             )}
         </div>
