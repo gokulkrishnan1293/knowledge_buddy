@@ -362,6 +362,9 @@ YOUR RESPONSE:"""
         
         # 5. Fetch Skills
         skills = db.query(AgentSkill).filter(AgentSkill.agent_id == request.agent_id).all()
+        print(f"DEBUG: Found {len(skills)} skills for agent {request.agent_id}")
+        for skill in skills:
+            print(f"  - {skill.name}: {skill.description}")
 
         # 6. Generate Response (with potential tool calling)
         response_payload = llm_service.generate_response(full_prompt, skills=skills)

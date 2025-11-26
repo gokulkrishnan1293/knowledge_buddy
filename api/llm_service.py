@@ -41,7 +41,7 @@ class GoogleLLMService:
         if not self.api_key:
             return "I'm sorry, I can't answer that right now because my brain (API Key) is missing."
 
-        url = f"{self.base_url}/gemini-flash-latest:generateContent?key={self.api_key}"
+        url = f"{self.base_url}/gemini-2.5-pro:generateContent?key={self.api_key}"
         headers = {"Content-Type": "application/json"}
         
         # Base payload
@@ -74,6 +74,9 @@ class GoogleLLMService:
             
             if tools:
                 payload["tools"] = [{"function_declarations": tools}]
+                print(f"DEBUG: Sending {len(tools)} tools to LLM:")
+                for tool in tools:
+                    print(f"  - {tool['name']}: {tool['description']}")
 
         # Retry logic for rate limiting
         max_retries = 3
@@ -111,6 +114,7 @@ class GoogleLLMService:
                 for part in parts:
                     if "functionCall" in part:
                         fn_call = part["functionCall"]
+                        print(f"DEBUG: LLM called function: {fn_call['name']}")
                         return {
                             "tool_call": True,
                             "name": fn_call["name"],
@@ -118,6 +122,7 @@ class GoogleLLMService:
                         }
 
                 # Normal text response
+                print("DEBUG: LLM returned text response (no function call)")
                 return parts[0]["text"]
                 
             except requests.exceptions.HTTPError as e:
