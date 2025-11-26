@@ -5,3 +5,7 @@ pydantic
 python-multipart
 requests
 chromadb
+pdfplumber
+pytesseract
+Pillow
+python-multipart

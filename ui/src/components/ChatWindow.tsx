@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Loader2, Sparkles, GraduationCap, CheckCircle, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, GraduationCap, CheckCircle, ThumbsUp, ThumbsDown, Paperclip, X, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
@@ -56,6 +56,12 @@ export function ChatWindow({
   const [qaPairs, setQaPairs] = useState<{ q: string, a: string }[]>([]);
   const [trainingStep, setTrainingStep] = useState<'initial' | 'answering'>('initial');
   const [loadingSummary, setLoadingSummary] = useState(false);
+
+  // File Upload State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [attachedContext, setAttachedContext] = useState<string | null>(null);
+  const [attachedFileName, setAttachedFileName] = useState<string | null>(null);
 
   useEffect(() => {
     const loadInitialMessage = async () => {
@@ -136,8 +142,12 @@ export function ChatWindow({
     try {
       if (mode === 'chat') {
         const response = conversationId
-          ? await api.chatWithConversation(agentId, userMsg.content, conversationId)
-          : await api.chat(agentId, userMsg.content);
+          ? await api.chatWithConversation(agentId, userMsg.content, conversationId, attachedContext || undefined)
+          : await api.chat(agentId, userMsg.content, attachedContext || undefined);
+
+        // Clear attached context after sending
+        setAttachedContext(null);
+        setAttachedFileName(null);
 
         const agentMsg: Message = {
           id: (Date.now() + 1).toString(), // Temporary ID, normally backend returns this
@@ -243,6 +253,50 @@ export function ChatWindow({
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const result = await api.uploadFile(file, agentId, mode, topicId);
+
+      if (mode === 'training') {
+        // For training, it's auto-added to KB
+        const agentMsg: Message = {
+          id: Date.now().toString(),
+          role: "agent",
+          content: `✅ I've read **${file.name}** and added it to my knowledge base.`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, agentMsg]);
+
+        // Trigger analysis if needed, or just let user ask questions
+        // Maybe trigger analysis on the extracted text?
+        if (result.extracted_text) {
+          // Optional: trigger analysis flow immediately
+          // For now, just confirming is good.
+        }
+      } else {
+        // For chat, we attach it as context
+        setAttachedContext(result.extracted_text);
+        setAttachedFileName(file.name);
+      }
+    } catch (error: any) {
+      const errorMsg: Message = {
+        id: Date.now().toString(),
+        role: "agent",
+        content: `⚠️ Error uploading file: ${error.message}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      setIsUploading(false);
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
@@ -375,7 +429,38 @@ export function ChatWindow({
 
       {/* Input */}
       <div className="p-4 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
+        {/* Attached File Preview */}
+        {attachedFileName && (
+          <div className="mb-3 flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 px-3 py-2 rounded-lg text-sm w-fit">
+            <FileText size={14} />
+            <span className="font-medium max-w-[200px] truncate">{attachedFileName}</span>
+            <button
+              onClick={() => { setAttachedContext(null); setAttachedFileName(null); }}
+              className="ml-2 hover:text-blue-900 dark:hover:text-blue-100"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         <div className="relative flex items-end gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".txt,.pdf,.md,.png,.jpg,.jpeg"
+            onChange={handleFileSelect}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || isUploading}
+          >
+            {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Paperclip size={20} />}
+          </Button>
+
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}

@@ -47,11 +47,12 @@ export const api = {
   },
 
   // --- FIXING CHAT TO SHOW REAL ERRORS ---
-  chat: async (agentId: string, message: string) => {
+  chat: async (agentId: string, message: string, contextText?: string) => {
     try {
       const response = await axios.post(`${API_URL}/chat`, {
         agent_id: agentId,
-        message: message
+        message: message,
+        context_text: contextText
       });
       return response.data;
     } catch (error: any) {
@@ -62,12 +63,13 @@ export const api = {
     }
   },
 
-  chatWithConversation: async (agentId: string, message: string, conversationId?: string) => {
+  chatWithConversation: async (agentId: string, message: string, conversationId?: string, contextText?: string) => {
     try {
       const response = await axios.post(`${API_URL}/chat`, {
         agent_id: agentId,
         message: message,
-        conversation_id: conversationId
+        conversation_id: conversationId,
+        context_text: contextText
       });
       return response.data;
     } catch (error: any) {
@@ -249,6 +251,82 @@ export const api = {
     } catch (error) {
       console.error("Error submitting feedback:", error);
       return false;
+    }
+  },
+
+  uploadFile: async (file: File, agentId: string, mode: 'chat' | 'training', topicId?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('agent_id', agentId);
+    formData.append('mode', mode);
+    if (topicId) {
+      formData.append('topic_id', topicId);
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error("Error uploading file:", error);
+      const errorMessage = error.response?.data?.detail || "Error uploading file.";
+      throw new Error(errorMessage);
+    }
+  },
+
+  // --- SKILLS ---
+  getSkills: async (agentId: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/agents/${agentId}/skills`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching skills:", error);
+      return [];
+    }
+  },
+
+  createSkill: async (agentId: string, skill: any) => {
+    try {
+      const response = await axios.post(`${API_URL}/agents/${agentId}/skills`, skill);
+      return response.data;
+    } catch (error: any) {
+      console.error("Error creating skill:", error);
+      const errorMessage = error.response?.data?.detail || "Error creating skill.";
+      throw new Error(errorMessage);
+    }
+  },
+
+  deleteSkill: async (agentId: string, skillId: string) => {
+    try {
+      await axios.delete(`${API_URL}/agents/${agentId}/skills/${skillId}`);
+      return true;
+    } catch (error) {
+      console.error("Error deleting skill:", error);
+      return false;
+    }
+  },
+
+  getSkill: async (agentId: string, skillId: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/agents/${agentId}/skills/${skillId}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching skill:", error);
+      return null;
+    }
+  },
+
+  updateSkill: async (agentId: string, skillId: string, skill: any) => {
+    try {
+      const response = await axios.put(`${API_URL}/agents/${agentId}/skills/${skillId}`, skill);
+      return response.data;
+    } catch (error: any) {
+      console.error("Error updating skill:", error);
+      const errorMessage = error.response?.data?.detail || "Error updating skill.";
+      throw new Error(errorMessage);
     }
   },
 };

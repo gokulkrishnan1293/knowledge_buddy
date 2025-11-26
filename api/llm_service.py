@@ -31,26 +31,77 @@ class GoogleLLMService:
             print(f"Error generating embedding: {e}")
             return [0.0] * 768
 
-    def generate_response(self, prompt: str):
+    def generate_response(self, prompt: str, skills: list = None):
         """
         Generates a response using gemini-1.5-flash.
+        Supports tool calling if skills are provided.
         """
         if not self.api_key:
             return "I'm sorry, I can't answer that right now because my brain (API Key) is missing."
 
         url = f"{self.base_url}/gemini-flash-latest:generateContent?key={self.api_key}"
         headers = {"Content-Type": "application/json"}
+        
+        # Base payload
         payload = {
             "contents": [{
                 "parts": [{"text": prompt}]
             }]
         }
 
+        # Add Tools if skills exist
+        if skills:
+            tools = []
+            for skill in skills:
+                # Parse parameters JSON string to dict if needed, or assume it's already dict/str
+                try:
+                    params = json.loads(skill.parameters) if isinstance(skill.parameters, str) else skill.parameters
+                except:
+                    params = {}
+
+                tool_decl = {
+                    "name": skill.name,
+                    "description": skill.description,
+                    "parameters": {
+                        "type": "OBJECT",
+                        "properties": params,
+                        "required": list(params.keys()) if params else []
+                    }
+                }
+                tools.append(tool_decl)
+            
+            if tools:
+                payload["tools"] = [{"function_declarations": tools}]
+
         try:
             response = requests.post(url, headers=headers, data=json.dumps(payload))
             response.raise_for_status()
             data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            
+            # Check for Tool Calls
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return "I'm not sure what to say."
+                
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            
+            if not parts:
+                 return "I'm not sure what to say."
+
+            # Look for function call in parts
+            for part in parts:
+                if "functionCall" in part:
+                    fn_call = part["functionCall"]
+                    return {
+                        "tool_call": True,
+                        "name": fn_call["name"],
+                        "args": fn_call.get("args", {})
+                    }
+
+            # Normal text response
+            return parts[0]["text"]
+            
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I encountered an error while thinking."

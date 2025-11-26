@@ -46,3 +46,13 @@ class ChatMessage(Base):
     content = Column(Text)
     timestamp = Column(String)
     rating = Column(Integer, default=0)
+
+class AgentSkill(Base):
+    __tablename__ = "agent_skills"
+
+    id = Column(String, primary_key=True, index=True)
+    agent_id = Column(String, ForeignKey("agents.id"))
+    name = Column(String, index=True)
+    description = Column(Text)
+    code = Column(Text)
+    parameters = Column(Text) # Storing JSON as text for simplicity in SQLite

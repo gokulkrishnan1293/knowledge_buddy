@@ -12,7 +12,8 @@ import {
   Loader2,
   BrainCircuit,
   CheckCircle2,
-  Trash2
+  Trash2,
+  ArrowLeft, Bot, Brain, MessageSquare, GraduationCap, Play, Code
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -110,6 +111,14 @@ export default function AgentOverview() {
         </div>
         <div className="flex gap-2">
           {/* Export and Quick Test buttons removed as requested */}
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => router.push(`/agent/${agent.id}/skills`)}
+          >
+            <Code size={16} />
+            Skills Studio
+          </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

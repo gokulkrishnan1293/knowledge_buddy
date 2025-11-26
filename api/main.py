@@ -1,14 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from sqlalchemy import desc
 import uuid
+import json
 from datetime import datetime
 from dotenv import load_dotenv
 
 # Database & Models
 from database import get_db, engine, Base
-from models import Agent, Topic, KnowledgeGap, ChatMessage, Conversation
+from models import Agent, Topic, KnowledgeGap, ChatMessage, Conversation, AgentSkill
 
 # Schemas
 # Make sure FeedbackRequest is defined in your schemas.py file!
@@ -19,12 +21,18 @@ from schemas import (
     KnowledgeRequest, 
     AnalyzeRequest, 
     FinalizeRequest,
-    FeedbackRequest 
+    FinalizeRequest,
+    FeedbackRequest,
+    SkillCreate,
+    SkillResponse,
+    SkillUpdate
 )
 
 # Services
 from llm_service import GoogleLLMService
 from vector_store import VectorStore
+from file_processing import extract_text_from_file
+from services.skill_runner import execute_python_skill
 
 # Load environment variables
 load_dotenv()
@@ -119,7 +127,131 @@ def delete_agent(agent_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": "Agent deleted"}
 
-# --- CONVERSATIONS ---
+    return {"status": "success", "message": "Agent deleted"}
+
+# --- SKILLS ---
+
+@app.get("/agents/{agent_id}/skills", response_model=list[SkillResponse])
+def get_agent_skills(agent_id: str, db: Session = Depends(get_db)):
+    skills = db.query(AgentSkill).filter(AgentSkill.agent_id == agent_id).all()
+    # Parse parameters from string to dict for response
+    results = []
+    for skill in skills:
+        try:
+            params = json.loads(skill.parameters) if skill.parameters else {}
+        except:
+            params = {}
+        results.append(SkillResponse(
+            id=skill.id,
+            agent_id=skill.agent_id,
+            name=skill.name,
+            description=skill.description,
+            code=skill.code,
+            parameters=params
+        ))
+    return results
+
+@app.post("/agents/{agent_id}/skills", response_model=SkillResponse)
+def create_agent_skill(agent_id: str, skill: SkillCreate, db: Session = Depends(get_db)):
+    # Check if skill name exists for this agent
+    existing = db.query(AgentSkill).filter(
+        AgentSkill.agent_id == agent_id,
+        AgentSkill.name == skill.name
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Skill with this name already exists for this agent")
+        
+    db_skill = AgentSkill(
+        id=str(uuid.uuid4()),
+        agent_id=agent_id,
+        name=skill.name,
+        description=skill.description,
+        code=skill.code,
+        parameters=json.dumps(skill.parameters) # Store as JSON string
+    )
+    db.add(db_skill)
+    db.commit()
+    db.refresh(db_skill)
+    
+    return SkillResponse(
+        id=db_skill.id,
+        agent_id=db_skill.agent_id,
+        name=db_skill.name,
+        description=db_skill.description,
+        code=db_skill.code,
+        parameters=skill.parameters
+    )
+
+@app.delete("/agents/{agent_id}/skills/{skill_id}")
+def delete_agent_skill(agent_id: str, skill_id: str, db: Session = Depends(get_db)):
+    skill = db.query(AgentSkill).filter(AgentSkill.id == skill_id, AgentSkill.agent_id == agent_id).first()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+        
+    db.delete(skill)
+    db.commit()
+    return {"status": "success", "message": "Skill deleted"}
+
+@app.get("/agents/{agent_id}/skills/{skill_id}", response_model=SkillResponse)
+def get_agent_skill(agent_id: str, skill_id: str, db: Session = Depends(get_db)):
+    skill = db.query(AgentSkill).filter(AgentSkill.id == skill_id, AgentSkill.agent_id == agent_id).first()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    
+    try:
+        params = json.loads(skill.parameters) if skill.parameters else {}
+    except:
+        params = {}
+        
+    return SkillResponse(
+        id=skill.id,
+        agent_id=skill.agent_id,
+        name=skill.name,
+        description=skill.description,
+        code=skill.code,
+        parameters=params
+    )
+
+@app.put("/agents/{agent_id}/skills/{skill_id}", response_model=SkillResponse)
+def update_agent_skill(agent_id: str, skill_id: str, skill_update: SkillUpdate, db: Session = Depends(get_db)):
+    skill = db.query(AgentSkill).filter(AgentSkill.id == skill_id, AgentSkill.agent_id == agent_id).first()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+        
+    if skill_update.name:
+        # Check uniqueness if name changed
+        if skill_update.name != skill.name:
+            existing = db.query(AgentSkill).filter(
+                AgentSkill.agent_id == agent_id,
+                AgentSkill.name == skill_update.name
+            ).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="Skill with this name already exists")
+        skill.name = skill_update.name
+        
+    if skill_update.description:
+        skill.description = skill_update.description
+    if skill_update.code:
+        skill.code = skill_update.code
+    if skill_update.parameters is not None:
+        skill.parameters = json.dumps(skill_update.parameters)
+        
+    db.commit()
+    db.refresh(skill)
+    
+    try:
+        params = json.loads(skill.parameters) if skill.parameters else {}
+    except:
+        params = {}
+        
+    return SkillResponse(
+        id=skill.id,
+        agent_id=skill.agent_id,
+        name=skill.name,
+        description=skill.description,
+        code=skill.code,
+        parameters=params
+    )
 
 @app.post("/conversations")
 def create_conversation(db: Session = Depends(get_db)):
@@ -213,6 +345,7 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 3. Only provide deep technical details if the user specifically asks for "details", "more info", or "full explanation".
 4. Use the provided Knowledge Base to answer.
 5. Use the Conversation History to understand follow-up questions (e.g., if user says "Tell me more about that").
+6. **CRITICAL**: If you cannot find the answer in the Knowledge Base below, you MUST respond with EXACTLY this phrase: "I don't have that information in my knowledge base." Do NOT guess or make up information.
 
 ### KNOWLEDGE BASE (Reference Material):
 {context_text}
@@ -222,11 +355,36 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
 ### CURRENT USER MESSAGE:
 USER: {request.message}
+CONTEXT FROM UPLOADED FILE:
+{request.context_text if request.context_text else "None"}
 
 YOUR RESPONSE:"""
         
-        # 5. Generate Response
-        response_text = llm_service.generate_response(full_prompt)
+        # 5. Fetch Skills
+        skills = db.query(AgentSkill).filter(AgentSkill.agent_id == request.agent_id).all()
+
+        # 6. Generate Response (with potential tool calling)
+        response_payload = llm_service.generate_response(full_prompt, skills=skills)
+        
+        response_text = ""
+        
+        # Handle Tool Call
+        if isinstance(response_payload, dict) and response_payload.get("tool_call"):
+            tool_name = response_payload["name"]
+            tool_args = response_payload["args"]
+            
+            # Find the skill
+            skill_record = next((s for s in skills if s.name == tool_name), None)
+            
+            if skill_record:
+                # Execute Skill
+                execution_result = execute_python_skill(skill_record.code, tool_args)
+                response_text = f"⚙️ Executed Skill '{tool_name}':\n\n{execution_result}"
+            else:
+                response_text = f"⚠️ Tried to call skill '{tool_name}' but it was not found."
+        else:
+            response_text = response_payload
+
         if not response_text:
              response_text = "I'm having trouble thinking right now. Please check my API key."
 
@@ -269,8 +427,13 @@ YOUR RESPONSE:"""
         
         db.commit()
         
-        # 8. Detect Knowledge Gap (Simple Heuristic)
-        if "don't know" in response_text.lower() or "do not know" in response_text.lower():
+        # 8. Detect Knowledge Gap (Exact Match)
+        # We instruct the LLM to use this exact phrase when it doesn't know
+        if "I don't have that information in my knowledge base" in response_text:
+            # Generate a ticket number (using timestamp + random for uniqueness)
+            import random
+            ticket_number = f"KB-{datetime.utcnow().strftime('%Y%m%d')}-{random.randint(1000, 9999)}"
+            
             # Check for duplicates
             existing_gap = db.query(KnowledgeGap).filter(
                 KnowledgeGap.agent_id == request.agent_id,
@@ -289,6 +452,11 @@ YOUR RESPONSE:"""
                 )
                 db.add(new_gap)
             db.commit()
+            
+            # Replace the generic response with a more helpful one including ticket number
+            response_text = f"""I don't have that information in my knowledge base yet.
+
+I've created a ticket ({ticket_number}) and will reach out to the owner to update my knowledge. Thank you for your patience!"""
         
         return ChatResponse(response=response_text, source="ai")
 
@@ -430,3 +598,44 @@ def get_chat_history(agent_id: str, limit: int = 50, db: Session = Depends(get_d
         ChatMessage.agent_id == agent_id
     ).order_by(ChatMessage.timestamp.desc()).limit(limit).all()
     return list(reversed(messages))
+
+# --- FILE UPLOAD ---
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    agent_id: str = Form(...),
+    mode: str = Form(...), # 'chat' or 'training'
+    topic_id: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    # 1. Extract Text
+    text = await extract_text_from_file(file)
+    
+    if not text:
+        raise HTTPException(status_code=400, detail="Could not extract text from file.")
+        
+    # 2. Handle based on Mode
+    if mode == 'training':
+        if not topic_id:
+            raise HTTPException(status_code=400, detail="Topic ID required for training upload.")
+            
+        # Enrich and Store
+        enriched_text = llm_service.enrich_knowledge(text)
+        embedding = llm_service.get_embedding(enriched_text)
+        vector_store.add_document(agent_id, topic_id, enriched_text, embedding, raw_text=text)
+        
+        # Update Topic Count
+        topic = db.query(Topic).filter(Topic.id == topic_id).first()
+        if topic:
+            topic.doc_count += 1
+            db.commit()
+            
+        return {"status": "success", "message": "Knowledge added from file", "extracted_text": text}
+        
+    elif mode == 'chat':
+        # For chat, we just return the text so frontend can send it as context
+        return {"status": "success", "extracted_text": text}
+        
+    else:
+        raise HTTPException(status_code=400, detail="Invalid mode")
